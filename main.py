@@ -8,16 +8,17 @@ from matplotlib.backends.backend_tkagg import FigureCanvasTkAgg
 import matplotlib.pyplot as plt
 
 #firebase setup
-cred = credentials.Certificate(r"C:\Users\siigu\OneDrive\Desktop\database project\weather-tracker-36e4f-firebase-adminsdk-fbsvc-8c51fc1455.json")
-firebase_admin.initialize_app(cred)
+cred = credentials.Certificate(r"C:\Users\siigu\OneDrive\Desktop\database project\weather-tracker-36e4f-firebase-adminsdk-fbsvc-99d17bbc4b.json")
+if not firebase_admin._apps:
+    firebase_admin.initialize_app(cred)
 db = firestore.client()
 
 #api key
-API_KEY = "your_openweathermap_api_key"
+API_KEY = "c16fd325fa7be68835e908f697503fcd"
 
-# ---------------- Functions ----------------
+#all the fun stuff
 def fetch_weather(zip_code, country_code="US"):
-    """Fetch weather data using zip code"""
+    #fetch weather data using zip code
     try:
         #get lat and lon from zip code
         geo_url = f"http://api.openweathermap.org/geo/1.0/zip?zip={zip_code},{country_code}&appid={API_KEY}"
@@ -50,21 +51,29 @@ def fetch_weather(zip_code, country_code="US"):
         return None
 
 def add_station():
-    """Add a new station with ZIP code"""
     station_name = station_entry.get().strip()
     zip_code = zip_entry.get().strip()
+
     if not station_name or not zip_code:
         messagebox.showwarning("Input Error", "Please enter both station name and ZIP code.")
         return
 
-    stations[station_name] = zip_code
-    station_dropdown['menu'].add_command(label=station_name, command=tk._setit(selected_station, station_name))
-    messagebox.showinfo("Station Added", f"Station '{station_name}' with ZIP '{zip_code}' added successfully!")
+    # save to Firestore
+    db.collection("weatherStations").document(station_name).set({
+        "zip": zip_code
+    })
+
+    messagebox.showinfo(
+        "Station Added",
+        f"Station '{station_name}' with ZIP '{zip_code}' added successfully!"
+    )
+
+    load_stations_from_db()
 
 def update_weather():
     """Fetch and display weather for selected station"""
     station_name = selected_station.get()
-    if not station_name:
+    if station_name == "Select a station":
         messagebox.showwarning("No Station Selected", "Please select a station.")
         return
 
@@ -116,27 +125,40 @@ def plot_history(station_name):
     else:
         ax.text(0.5, 0.5, "No historical data", horizontalalignment='center', verticalalignment='center')
 
+    fig.tight_layout()
+
     canvas.draw()
 
+def load_stations_from_db():
+    stations.clear()
+    station_dropdown['menu'].delete(0, 'end')
+
+    docs = db.collection("weatherStations").stream()
+    for doc in docs:
+        data = doc.to_dict()
+        zip_code = data.get("zip")
+        if zip_code:
+            stations[doc.id] = zip_code
+            station_dropdown['menu'].add_command(
+                label=doc.id,
+                command=tk._setit(selected_station, doc.id)
+            )
 #gui setup
 root = tk.Tk()
 root.title("Weather Dashboard")
 root.geometry("600x600")
 
 
-stations = {
-    "Madison-Wisconsin": "53703",
-    "Chicago-Illinois": "60601",
-    "Verona-Wisconsin": "53593"
-}
+stations = {}
 
 selected_station = tk.StringVar(root)
-selected_station.set("")
-
+selected_station.set("Select a station")
 
 tk.Label(root, text="Select Station:").pack(pady=5)
-station_dropdown = tk.OptionMenu(root, selected_station, *stations.keys())
+station_dropdown = tk.OptionMenu(root, selected_station, "Loading...")
 station_dropdown.pack(pady=5)
+
+load_stations_from_db()
 
 tk.Button(root, text="Update Weather", command=update_weather).pack(pady=10)
 
